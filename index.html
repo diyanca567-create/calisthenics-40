@@ -676,27 +676,50 @@ const PR_CFG = {
 // ─── STATE + STORAGE ─────────────────────────────────────────────────────────
 let S = {days:{}, ms:{}, exs:{}, logs:[], start:null};
 
+const JSONBIN_KEY = '$2a$10$cjwMhVxyMXgUoFPxa5RsGehiF65ASVXVwCqsq0mekLUEF03gda6Pq';
+const JSONBIN_BIN = '69e7261eaaba8821971fa8bc';
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN}`;
+
 async function loadS() {
+  // First load from localStorage so the app starts instantly
+  try { const d = localStorage.getItem('cali_v4'); if(d) S = JSON.parse(d); } catch{}
+  setMsg('Syncing…', '');
+  renderDash();
+  // Then fetch latest from cloud and override if newer
   try {
-    const r = await window.storage.get('cali_state');
-    if (r && r.value) { S = JSON.parse(r.value); }
+    const r = await fetch(JSONBIN_URL + '/latest', {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const data = await r.json();
+    if (data.record && Object.keys(data.record).length > 0) {
+      S = data.record;
+      localStorage.setItem('cali_v4', JSON.stringify(S));
+    }
+    setMsg('Synced ✓', 'ok');
   } catch(e) {
-    // storage unavailable — try localStorage fallback
-    try { const d = localStorage.getItem('cali_v4'); if(d) S = JSON.parse(d); } catch{}
+    setMsg('Offline — using local save', '');
   }
-  setMsg('All saved ✓', 'ok');
+  renderDash();
 }
 
 async function persist() {
   const str = JSON.stringify(S);
-  let ok = false;
-  try {
-    await window.storage.set('cali_state', str);
-    ok = true;
-  } catch(e) {}
-  // Always also write to localStorage as backup
+  // Always save locally first so nothing is ever lost
   try { localStorage.setItem('cali_v4', str); } catch{}
-  setMsg(ok ? 'All saved ✓' : 'Saved locally', ok ? 'ok' : '');
+  // Then push to cloud
+  try {
+    await fetch(JSONBIN_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_KEY
+      },
+      body: str
+    });
+    setMsg('All saved ✓', 'ok');
+  } catch(e) {
+    setMsg('Saved locally (cloud offline)', '');
+  }
 }
 
 function setMsg(txt, cls) {
